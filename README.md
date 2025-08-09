@@ -8,3 +8,4 @@
 - (ДЗ 3) [Обоснование выбора способов связи микросервисов](network-realisation.md)
 - (ДЗ 3) [Спецификация RESTful API](restful-spec-order-service.yml) 
 - (ДЗ 3) Конфигурации Gateway API / Service Discovery
+- трейсы
