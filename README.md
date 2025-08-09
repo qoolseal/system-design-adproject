@@ -5,6 +5,6 @@
 - (ДЗ 1 + ДЗ 2) [подробное текстовое описание и схема по версиям](details-description.md)
 - (ДЗ 2) [описание метрик и шаблон профиля производительности](metrics-profile-template.md)
 ---
-- (ДЗ 3) [Спецификация RESTful API](restful-api- .md)
+- (ДЗ 3) [Спецификация RESTful API](restful-api-order-service.md)
 - (ДЗ 3) Конфигурации Gateway API / Service Discovery
 - (ДЗ 3) Обоснование выбора способов связи микросервисов
