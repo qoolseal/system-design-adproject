@@ -1,0 +1,389 @@
+openapi: 3.1.0
+info:
+  title: Order Service API
+  version: 1.0.0
+  description: |
+    RESTful API для управления заказами в сервисе объявлений с доставкой и оплатой.
+    Ключевые принципы:
+      - Все входящие запросы проходят через API Gateway.
+      - Авторизация по JWT (OAuth2/OIDC). 
+      - Идемпотентность для изменяющих операций через заголовок Idempotency-Key
+      - Корреляция трассировок через заголовок X-Request-ID
+      - Ответы ошибок в формате RFC 7807 (application/problem+json).
+servers:
+  - url: https://api.example.com/order
+    description: Production via API Gateway
+  - url: https://staging.api.example.com/order
+    description: Staging
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  headers:
+    Idempotency-Key:
+      description: >
+        Уникальный ключ (UUID) для идемпотентных операций. Один и тот же ключ
+        гарантирует, что повтор отправит тот же результат. TTL ключа на стороне сервиса — 24 часа.
+      schema:
+        type: string
+    X-Request-ID:
+      description: Идентификатор запроса для трассировки.
+      schema:
+        type: string
+  parameters:
+    Page:
+      name: page
+      in: query
+      description: Номер страницы (начиная с 1)
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Size:
+      name: size
+      in: query
+      description: Размер страницы (1..200)
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 20
+    Sort:
+      name: sort
+      in: query
+      description: Поле сортировки, например `createdAt,desc`
+      schema:
+        type: string
+  schemas:
+    Problem:
+      type: object
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        traceId: { type: string }
+      required: [title, status]
+    Money:
+      type: object
+      properties:
+        currency: { type: string, example: RUB }
+        amountMinor: { type: integer, description: Сумма в минорных единицах (копейки) }
+      required: [currency, amountMinor]
+    Address:
+      type: object
+      properties:
+        country: { type: string }
+        city: { type: string }
+        street: { type: string }
+        house: { type: string }
+        apartment: { type: string, nullable: true }
+        postalCode: { type: string }
+      required: [country, city, street, house, postalCode]
+    OrderItem:
+      type: object
+      properties:
+        sku: { type: string }
+        title: { type: string }
+        quantity: { type: integer, minimum: 1 }
+        price: { $ref: '#/components/schemas/Money' }
+      required: [sku, quantity, price]
+    PaymentMethod:
+      type: string
+      enum: [CARD, SBP, WALLET, COD]
+    PaymentState:
+      type: string
+      enum: [NEW, AUTHORIZED, CAPTURED, CANCELED, REFUNDED, FAILED]
+    DeliveryState:
+      type: string
+      enum: [NEW, ALLOCATED, IN_TRANSIT, DELIVERED, FAILED, CANCELED]
+    OrderState:
+      type: string
+      enum: [CREATED, CONFIRMED, FULFILLING, COMPLETED, CANCELED]
+    Order:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/OrderItem' }
+        total: { $ref: '#/components/schemas/Money' }
+        deliveryAddress: { $ref: '#/components/schemas/Address' }
+        paymentMethod: { $ref: '#/components/schemas/PaymentMethod' }
+        orderState: { $ref: '#/components/schemas/OrderState' }
+        paymentState: { $ref: '#/components/schemas/PaymentState' }
+        deliveryState: { $ref: '#/components/schemas/DeliveryState' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, description: Версия для оптимистической блокировки }
+      required: [id, userId, items, total, paymentMethod, orderState, createdAt]
+    CreateOrderRequest:
+      type: object
+      properties:
+        userId: { type: string, format: uuid }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/OrderItem' }
+        deliveryAddress: { $ref: '#/components/schemas/Address' }
+        paymentMethod: { $ref: '#/components/schemas/PaymentMethod' }
+        clientAttributes:
+          type: object
+          additionalProperties: { type: string }
+      required: [userId, items, deliveryAddress, paymentMethod]
+    UpdateItemsRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/OrderItem' }
+        version: { type: integer }
+      required: [items, version]
+    ConfirmOrderRequest:
+      type: object
+      properties:
+        version: { type: integer }
+      required: [version]
+    CancelOrderRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 300
+        version: { type: integer }
+      required: [version]
+    PatchDeliveryAddressRequest:
+      type: object
+      properties:
+        deliveryAddress: { $ref: '#/components/schemas/Address' }
+        version: { type: integer }
+      required: [deliveryAddress, version]
+    PagedOrders:
+      type: object
+      properties:
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer }
+        totalPages: { type: integer }
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/Order' }
+
+paths:
+  /v1/orders:
+    post:
+      summary: Создать заказ
+      description: >
+        Инициирует создание заказа. Операция идемпотентна при передаче заголовка Idempotency-Key.
+        После создания запускается сага (через Kafka) на оплату/доставку.
+      operationId: createOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOrderRequest' }
+      parameters:
+        - $ref: '#/components/headers/Idempotency-Key'
+        - $ref: '#/components/headers/X-Request-ID'
+      responses:
+        '201':
+          description: Заказ создан
+          headers:
+            Location:
+              description: URI созданного заказа
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { description: Неверные данные, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '401': { description: Неавторизован }
+        '409': { description: Конфликт (версия/правила), content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+    get:
+      summary: Поиск/листинг заказов текущего пользователя
+      operationId: listOrders
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+        - name: state
+          in: query
+          schema: { $ref: '#/components/schemas/OrderState' }
+        - name: from
+          in: query
+          description: дата/время с
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          description: дата/время по
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Страница заказов
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PagedOrders' }
+        '401': { description: Неавторизован }
+
+  /v1/orders/{orderId}:
+    get:
+      summary: Получить заказ
+      operationId: getOrder
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '401': { description: Неавторизован }
+        '404': { description: Не найден }
+    patch:
+      summary: Изменить адрес доставки
+      operationId: patchDeliveryAddress
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PatchDeliveryAddressRequest' }
+      responses:
+        '200': { description: Обновлённый заказ, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '400': { description: Ошибка данных, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '401': { description: Неавторизован }
+        '404': { description: Не найден }
+        '409': { description: Конфликт версий, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+
+  /v1/orders/{orderId}/items:
+    put:
+      summary: Полная замена состава заказа
+      operationId: replaceItems
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateItemsRequest' }
+      responses:
+        '200': { description: Обновлённый заказ, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '400': { description: Ошибка данных, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '401': { description: Неавторизован }
+        '404': { description: Не найден }
+        '409': { description: Конфликт версий, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+
+  /v1/orders/{orderId}/confirm:
+    post:
+      summary: Подтвердить заказ (переход к оплате/логистике)
+      description: >
+        Изменяющая операция — используйте Idempotency-Key. Внутри запускается сага: резерв оплаты и создание отгрузки.
+      operationId: confirmOrder
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/headers/Idempotency-Key'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfirmOrderRequest' }
+      responses:
+        '200': { description: Заказ подтверждён, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '401': { description: Неавторизован }
+        '404': { description: Не найден }
+        '409': { description: Неверная стадия/версия, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+
+  /v1/orders/{orderId}/cancel:
+    post:
+      summary: Отменить заказ
+      description: >
+        Отмена идемпотентна по Idempotency-Key. Внутри инициируются компенсации (оплата/доставка).
+      operationId: cancelOrder
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/headers/Idempotency-Key'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelOrderRequest' }
+      responses:
+        '200': { description: Заказ отменён, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '401': { description: Неавторизован }
+        '404': { description: Не найден }
+        '409': { description: Нельзя отменить на текущей стадии, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+
+  /v1/orders/{orderId}/status:
+    get:
+      summary: Получить агрегированный статус (order/payment/delivery)
+      operationId: getAggregateStatus
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Текущий агрегированный статус
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orderState: { $ref: '#/components/schemas/OrderState' }
+                  paymentState: { $ref: '#/components/schemas/PaymentState' }
+                  deliveryState: { $ref: '#/components/schemas/DeliveryState' }
+                  updatedAt: { type: string, format: date-time }
+        '404': { description: Не найден }
+
+  /v1/orders/{orderId}/events:
+    get:
+      summary: История доменных событий заказа
+      description: Возвращает последние события из хранилища событий/аудита.
+      operationId: getOrderEvents
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Страница событий
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  page: { type: integer }
+                  size: { type: integer }
+                  totalElements: { type: integer }
+                  content:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        type: { type: string }
+                        occurredAt: { type: string, format: date-time }
+                        payload: { type: object }
+        '404': { description: Не найден }
