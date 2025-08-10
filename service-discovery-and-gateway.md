@@ -119,15 +119,25 @@ services:
 - Используем `scope` для ограничения доступа к API:
     - `orders:read` для GET `/orders`
     - `orders:write` для POST/PATCH/DELETE `/orders`
-### Ограничения запросов
-- Лимит на пользователя (`consumer_id` из JWT).
-- Для публичных API можно ставить более жёсткие лимиты.
-- например:
 ```yaml
-plugins:
-  - name: rate-limiting
-    service: order-service
-    config:
-      minute: 120        # до 120 запросов в минуту
-      policy: local      # хранение счётчика локально
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: jwt-auth
+plugin: jwt
+config:
+  key_claim_name: kid
+  claims_to_verify:
+    - exp
+  secret_is_base64: false
+```
+### Ограничения запросов
+- Лимит на пользователя (`consumer_id` из JWT) 
+- Для публичных API можно ставить более жёсткие лимиты.
+- например, высокий лимит для операций чтения:
+```yaml
+plugin: rate-limiting
+config:
+  minute: 300
+  policy: local
 ```
