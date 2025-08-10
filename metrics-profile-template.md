@@ -3,16 +3,33 @@
 - Загрузка CPU/Memory/IO
 - Время отклика сервисов
 - Количество доступных подов в k8s (по каждому сервису)
+	- **kube-state-metrics**: `kube_deployment_status_replicas_available`, `kube_pod_container_status_restarts_total`
+	- Node exporter/cAdvisor: CPU/Memory/IO, throttling `container_cpu_cfs_throttled_seconds_total`.
 - Количество рестартов подов
 - Доступность PostgreSQL, Redis, Kafka (через blackbox-exporter)
 #### 2. Приложение:
-- RPS (Requests per second) по каждому API endpoint'у
-- Время ответа API (p50/p95/p99)
-- Количество ошибок по категориям (5xx, 4xx, timeouts)
-- Количество сообщений в Kafka (lag per consumer group)
-- Hit/miss Redis кэша
-- Глубина очередей Kafka
-- Скорость обработки Outbox
+- **Latency**: p50/p95/p99 для внешних REST и внутренних gRPC.
+- **Throughput**: RPS/eps (events per second).
+- **Error rate**: доля 5xx/4xx по REST, **grpc_status != OK** по gRPC.
+- **Saturation**: расход CPU/RAM, количество активных коннектов WS, пул соединений к БД/кэшам.
+- **Queueing**: Kafka lag, глубина outbox, время “событие→обработано”
+##### API Gateway (Kongo)
+- RPS по роутам, p95/p99 latency, 4xx/5xx rate.
+- TLS рукопожатия, открытые коннекты, upstream failures.
+- Для Kong: `kong_http_requests_total`, `kong_latency_*`
+##### REST & gRPC
+- **REST** (Spring): `http_server_requests_seconds_*`, `http_server_requests_seconds_count`, `http_server_requests_seconds_sum` (Micrometer)
+- **gRPC**: `grpc_server_started_total`, `grpc_server_handled_total{code!=OK}`, `grpc_server_handling_seconds_bucket` (grpc‑java + Micrometer)
+- Ретраи/таймауты: счётчики срабатываний (resilience4j: `resilience4j_circuitbreaker_*`, `resilience4j_retry_*`)
+##### WebSockets
+- Активные соединения (всего/на инстанс), подключений/сек, отвалов/сек.
+- Средний размер сообщения, outbound msgs/sec, drop/overflow.
+- Ping/pong latency, время подписки/авторизации.
+##### Kafka & Outbox
+- **Broker**: `kafka_server_brokertopicmetrics_messagesin_total`, `kafka_controller_kafkacontroller_activecontrollercount`, ISR, under‑replicated partitions.
+- **Consumer**: количество лаков на group/partition (`kafka_consumergroup_lag` из Kafka Exporter), rebalance count, processing latency (кастом: разница `processed_at - produced_at`).
+- **Producer**: `record-error-rate`, `record-retry-rate` (JMX).
+- **Outbox**: размер очереди, возраст старейшей записи, скорость удаления (`outbox_pending`, `outbox_oldest_age_seconds`, `outbox_drain_rate`).
 #### 3. База данных:
 - Время выполнения запросов
 - Количество подключений к PostgreSQL
@@ -26,6 +43,7 @@
 - **Jaeger** — для распределённой трассировки запросов между микросервисами.
 - **Blackbox exporter** — проверка доступности внешних зависимостей (платёжки, API доставки).
 - **Kafka Exporter** — статус брокеров, лаги консьюмеров, offset drift.
+	- **JMX Exporter** для Kafka брокеров и Java сервисов.
 ### Шаблон профиля производительности
 
 | Компонент      | Метрика                 | Целевое значение | Инструмент           | Назначение / Интерпретация                     |
@@ -41,7 +59,7 @@
 | Search Service | Fulltext query duration | < 500ms          | Prometheus / APM     | Быстродействие поиска                          |
 ### Сценарий анализа метрик и диагностики проблем
 
-📌 **Сценарий: Повышенная задержка в оформлении заказа**
+**Сценарий: Повышенная задержка в оформлении заказа**
 
 1. **Оповещение**:
    - Alert от Prometheus: "p95 latency of OrderService > 1.2s"
