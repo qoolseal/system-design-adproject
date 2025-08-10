@@ -76,3 +76,58 @@ spec:
 |**media-service**|REST|API Gateway|
 |**notification-service**|gRPC (внутренний API)|order-service, payment-service, delivery-service|
 |**report-service**|REST|API Gateway|
+## API Gateway - Kong
+### Цели API Gateway
+- **Маршрутизация**: внешние запросы по HTTP/2 или HTTP/3 -> в конкретный микросервис по пути и методу.
+- **Аутентификация**: валидация JWT (OAuth2/OIDC), проверка прав (scopes/roles).
+- **Rate Limiting**: ограничение числа запросов для защиты от DDoS/злоупотреблений.
+- **Обогащение запросов**: проброс `X-Request-ID` и `traceparent` для трассировки.
+- **TLS Termination**: шифрование между клиентом и шлюзом, опционально mTLS для доверенных партнёров.
+### Правила маршрутизации
+- Задаём маршрутизацию по префиксу, например api/v1/orders -> order-service
+```yaml
+_format_version: "3.0"
+services:
+  - name: order-service
+    url: http://order-service:8080
+    routes:
+      - name: orders
+        paths: [ "/api/v1/orders", "/api/v1/orders/*" ]
+        methods: [ GET, POST, PATCH, PUT, DELETE ]
+  - name: user-service
+    url: http://user-service:8080
+    routes:
+      - name: users
+        paths: [ "/api/v1/users", "/api/v1/users/*" ]
+        methods: [ GET, POST, PATCH, DELETE ]
+  - name: search-service
+    url: http://search-service:8080
+    routes:
+      - name: search
+        paths: [ "/api/v1/search" ]
+        methods: [ GET ]
+  - name: notification-service
+    url: http://notification-service:8080
+    routes:
+      - name: notifications
+        paths: [ "/api/v1/notifications/*" ]
+        methods: [ GET, POST ]
+```
+### Аутентификация
+- Подключаем проверку JWT ко всем сервисам, кроме публичных (например, `/health`).
+- Валидация по публичному ключу OIDC-провайдера (Auth0, Keycloak).
+- Используем `scope` для ограничения доступа к API:
+    - `orders:read` для GET `/orders`
+    - `orders:write` для POST/PATCH/DELETE `/orders`
+### Ограничения запросов
+- Лимит на пользователя (`consumer_id` из JWT).
+- Для публичных API можно ставить более жёсткие лимиты.
+- например:
+```yaml
+plugins:
+  - name: rate-limiting
+    service: order-service
+    config:
+      minute: 120        # до 120 запросов в минуту
+      policy: local      # хранение счётчика локально
+```
