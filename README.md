@@ -11,6 +11,9 @@
 1. [краткое описание и ссылка на актуальную диаграмму](main-project-system-design.md)
 2. (ДЗ 1 + ДЗ 2) [подробное текстовое описание и схема по версиям](details-description.md)
 3. (ДЗ 2 + ДЗ 3) [описание метрик и шаблон профиля производительности](metrics-profile-template.md)
+
 4. (ДЗ 3) [Обоснование выбора способов связи микросервисов](network-realisation.md) - REST, gRPC, WebSockets, Kafka
 5. (ДЗ 3) [Спецификация RESTful API](restful-spec-order-service.yml) 
 6. (ДЗ 3) [Конфигурации Gateway API и Service Discovery](service-discovery-and-gateway.md)
+   
+7. (ДЗ 4) 
