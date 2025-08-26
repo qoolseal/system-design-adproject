@@ -16,4 +16,4 @@
 5. (ДЗ 3) [Спецификация RESTful API](restful-spec-order-service.yml) 
 6. (ДЗ 3) [Конфигурации Gateway API и Service Discovery](service-discovery-and-gateway.md)
    
-7. (ДЗ 4) 
+7. (ДЗ 4) [Проектирование БД, кэша, CDN](data-base-and-cache-architecture.md)
