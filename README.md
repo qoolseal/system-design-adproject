@@ -17,4 +17,4 @@
 6. (ДЗ 3) [Конфигурации Gateway API и Service Discovery](service-discovery-and-gateway.md)
    
 7. (ДЗ 4) [Проектирование БД, кэша, CDN](data-base-and-cache-architecture.md)
-8. (ДЗ 4) []()
+8. (ДЗ 4) [Работа с требованиями системы и сценарии критических ситуаций](system-requirements-and-scenarios.md)
