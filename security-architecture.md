@@ -49,7 +49,25 @@
 - Фронт делает запросы к API с `Authorization: Bearer <access_token>`  
     (**refresh** держим только в httpOnly+Secure cookie).
 - Обновление токена: запрос `grant_type=refresh_token` → выдаётся новый access и **новый refresh** (ротация, «reuse detection»).
+```mermaid
+sequenceDiagram
+  actor User
+  participant Browser
+  participant Kong as Kong (API Gateway)
+  participant Keycloak as Keycloak (IdP)
+  participant API as Protected API
 
+  User->>Browser: open ads.company.com
+  Browser->>Kong: GET /
+  Kong-->>Browser: 302 Redirect to Keycloak /authorize (PKCE)
+  Browser->>Keycloak: Login (pwd/MFA)
+  Keycloak-->>Browser: 302 Redirect back with ?code&state
+  Browser->>Kong: /callback?code=...&state=...
+  Kong->>Keycloak: POST /token (code + code_verifier)
+  Keycloak-->>Kong: access_token + id_token + refresh_token
+  Browser->>API: API call with Authorization: Bearer access_token
+  API-->>Browser: 200 OK
+```
 **Сервис-сервис: Client credentials**
 - Сервис-клиент обращается к `/token` Keycloak с `grant_type=client_credentials`, аутентифицируясь как клиент  
 - Получает **access_token** (JWT, 3–10 мин) со своими `client_id`, `aud`, `scope`.
@@ -135,6 +153,46 @@
 **Почему**
 - RBAC закрывает «грубые» уровни, ABAC даёт тонкую грануляцию без взрывного роста ролей.
 - GitOps для политик = трассируемость и контроль изменений.
+```mermaid
+flowchart LR
+  U[(User)]
+  SA[(Service Account)]
+
+  subgraph Keycloak
+    KC[Keycloak IdP]
+  end
+
+  subgraph Kong
+    G[API Gateway]
+    JWT[JWT validation]
+    OPA[OPA policy check]
+  end
+
+  subgraph Microservices
+    Ad[ad-service]
+    Order[order-service]
+    Payment[payment-service]
+  end
+
+  %% Аутентификация
+  U -->|Login| KC
+  SA -->|Client credentials| KC
+
+  %% Выдача токенов
+  KC -->|Access/ID tokens JWT| G
+  KC -->|Service tokens JWT| G
+
+  %% Проверка на шлюзе
+  G -->|Validate| JWT
+  G -->|Authorize| OPA
+  JWT --> G
+  OPA --> G
+
+  %% Проксирование к сервисам
+  G --> Ad
+  G --> Order
+  G --> Payment
+```
 
 ---
 ## 4) Хранение и управление секретами
@@ -174,7 +232,34 @@
 1. DevOps кладёт **новую версию** `kv/data/delivery-service/partner_api_key`.
 2. Vault Agent обновляет файл в поде; `delivery-service` перечитывает ключ (сигнал или таймер).
 3. Старая версия остаётся «для отката» (но сервис уже работает на новой).
+```mermaid
+flowchart TB
+  subgraph Kubernetes
+    SA[ServiceAccount]
+    Pod[Microservice Pod]
+    Agent[Vault Agent / CSI]
+  end
 
+  subgraph Vault
+    KV[(KV v2: key/value with versions)]
+    DB[(Dynamic Secrets:\nPostgreSQL creds)]
+    Transit[(Transit:\nEncrypt / Decrypt)]
+    PKI[(PKI:\nmTLS certificates)]
+  end
+
+  %% Аутентификация пода в Vault
+  SA -->|JWT| Vault
+  Vault -->|Vault token bound to policy| Agent
+
+  %% Получение секретов в под
+  Agent -->|read secrets| KV
+  Agent -->|issue short-lived creds| DB
+  Pod -->|encrypt/decrypt PII| Transit
+  Pod -->|request short-lived cert| PKI
+
+  %% Ротация/обновление
+  Vault -->|rotate/update| Agent
+```
 ---
 ## 5) Мониторинг и аудит безопасности
 
