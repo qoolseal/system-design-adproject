@@ -16,3 +16,4 @@
    
 7. (ДЗ 4) [Проектирование БД, кэша, CDN](data-base-and-cache-architecture.md)
 8. (ДЗ 4) [Работа с требованиями системы и сценарии критических ситуаций](system-requirements-and-scenarios.md) 
+9. (ДЗ 5) [Безопасность системы](security-architecture.md)
