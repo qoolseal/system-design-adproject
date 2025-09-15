@@ -1,0 +1,14 @@
+- hosts: all
+  become: yes
+  roles:
+    - docker
+
+- hosts: db
+  become: yes
+  roles:
+    - db
+
+- hosts: app
+  become: yes
+  roles:
+    - app

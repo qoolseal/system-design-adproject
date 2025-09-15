@@ -1,0 +1,6 @@
+project: ads-demo
+docker_compose_version: "v2.27.0"
+app_image: ghcr.io/OWNER/ads-demo:latest
+db_name: adsdb
+db_user: ads
+db_password: "change_me"
