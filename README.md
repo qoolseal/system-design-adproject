@@ -1,11 +1,4 @@
 ## Проект по курсу System Design 2025
-### Последние изменения
-15.09 (ДЗ 6)
-- п.10 добавлен
-
-
-8.09 (ДЗ 5)
-- п.9 добавлен
 - схема https://app.diagrams.net/#G1ZmRJ5LRRFAmD-se9SyyQ4232OCjZHaLY#%7B%22pageId%22%3A%22m1w7S_AMzuUM7NPfwQDJ%22%7D
 ### Сервис объявлений с доставкой и проведением оплаты
 1. [краткое описание и ссылка на актуальную диаграмму](main-project-system-design.md)
