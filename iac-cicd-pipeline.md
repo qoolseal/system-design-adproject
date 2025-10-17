@@ -125,7 +125,7 @@ db-vm ansible_host=DB_VM_IP ansible_user=ubuntu
 ### Контейнеризация
 - multi-stage - чтобы образ был меньше и безопасней
 	- первая стадия использует JDK для сборки (нужен Maven/Gradle и компилятор Java), вторая стадия берёт только скомпилированный jar и запускает его на JRE
-- healthcheck - Kubernetes будет использовать его для автоматической перезагрузки контейнера, если сервис перестанет отвечать.
+- Healthcheck (Docker): используется только при локальном запуске контейнера/в Docker Compose. В Kubernetes он игнорируется — для K8s применяются readinessProbe, livenessProbe и при необходимости startupProbe
 ```dockerfile
 # --- build stage ---
 FROM eclipse-temurin:17-jdk AS build
